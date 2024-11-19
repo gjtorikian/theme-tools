@@ -1,10 +1,29 @@
 # @shopify/theme-check-common
 
+## 3.2.0
+
+### Minor Changes
+
+- 3f7680e: Add ValidBlockTarget Check
+- add2445: [Internal] Add better building blocks for dealing with `{% schema %}` content
+- 8a0bf78: Add ValidLocalBlocks Check
+- 7317830: Add translation checking to `ValidSchemaName` check
+- c4813ff: Add `BlockIdUsage` check
+
+### Patch Changes
+
+- 7a6dfe8: Fix weird root URI loading bug
+- b558bfe: Fixup CaptureOnContentForBlock check
+- 9a07208: [Bug fix] Metafield definitions should use `namespace.key` for auto-completion
+- f09c923: Moving internal methods around
+- Updated dependencies [c4813ff]
+  - @shopify/liquid-html-parser@2.1.1
+
 ## 3.1.0
 
 ### Minor Changes
 
-- b431db7: Add `ValidateSchemaName` check
+- b431db7: Add `ValidSchemaName` check
 - 568d53b: Add the `ValidContentForArguments` check
 - 6014dfd: Support metafield auto-completion based on .shopify/metafields.json file
 
