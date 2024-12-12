@@ -99,6 +99,10 @@
       {
         "command": "shopifyLiquid.runChecks",
         "title": "Liquid Theme Check: Run Checks"
+      },
+      {
+        "command": "shopifyLiquid.openPreview",
+        "title": "Shopify: Open Theme Preview"
       }
     ],
     "configuration": {
