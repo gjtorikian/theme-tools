@@ -1,6 +1,6 @@
 import { FileStat, FileTuple, path as pathUtils } from '@shopify/theme-check-common';
 import * as path from 'node:path';
-import { commands, Disposable, DecorationOptions,ExtensionContext, languages, Uri, workspace, WebviewPanel, ViewColumn, window } from 'vscode';
+import { commands, Disposable, Range, DecorationOptions,ExtensionContext, languages, Uri, workspace, WebviewPanel, ViewColumn, window, Position } from 'vscode';
 import {
   DocumentSelector,
   LanguageClient,
@@ -16,14 +16,19 @@ import { execSync } from 'node:child_process';
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 let client: LanguageClient | undefined;
-const THEME_ACCESS_PASSWORD = 'shptka_4881ef372849f7a07617f7498a15bce4';
 
-const decorationType = window.createTextEditorDecorationType({
-  after: {
-    margin: '0 0 0 1rem',
+const fileDecorationType = window.createTextEditorDecorationType({
+  before: {
+    margin: '0 0 1rem 0',
     textDecoration: 'none',
   },
   rangeBehavior: 1 // DecorationRangeBehavior.ClosedOpen
+});
+
+const lineDecorationType = window.createTextEditorDecorationType({
+  backgroundColor: 'rgba(173, 216, 230, 0.2)',
+  border: '1px solid rgba(173, 216, 230, 0.5)',
+  borderRadius: '3px',
 });
 
 class ThemePreviewPanel {
@@ -36,99 +41,73 @@ class ThemePreviewPanel {
   private constructor(panel: WebviewPanel, context: ExtensionContext) {
     this._panel = panel;
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-    this._panel.webview.html = this._getInitialHtml();
+
     this._context = context;
-
-    this._panel.webview.onDidReceiveMessage(
-      message => {
-        switch (message.command) {
-          case 'loadUrl':
-            this._panel.webview.html = this.getPageContentsFromURL(message.url);
-            this.processProfileResults();
-            return;
-        }
-      }
-    );
   }
 
-  private getPageContentsFromURL(url: string) {
-    try {
-      console.log('[Theme Preview] Attempting to load preview for URL:', url);
-      const result = execSync(`shopify theme info --password=${THEME_ACCESS_PASSWORD} --store=${url}`, { stdio: 'pipe' });
-      console.log('[Theme Preview] Successfully retrieved preview content');
-      return result.toString();
-    } catch (error) {
-      console.error('[Theme Preview] Error loading preview:', error);
-      if (error instanceof Error) {
-        // If there's stderr output, it will be in error.stderr
-        const errorMessage = (error as any).stderr?.toString() || error.message;
-        console.error('[Theme Preview] Error details:', errorMessage);
-        return `<div style="color: red; padding: 20px;">
-          <h3>Error loading preview:</h3>
-          <pre>${errorMessage}</pre>
-        </div>`;
-      }
-      console.error('[Theme Preview] Unexpected error type:', typeof error);
-      return '<div style="color: red; padding: 20px;">An unexpected error occurred</div>';
-    }
-  }
-
-  public static createOrShow(context: ExtensionContext) {
+  public static async createOrShow(context: ExtensionContext, url: string) {
     const column = ViewColumn.Beside;
-
+    const profile  = getProfileContents(url);
     if (ThemePreviewPanel.currentPanel) {
       ThemePreviewPanel.currentPanel._panel.reveal(column);
+      ThemePreviewPanel.currentPanel.processProfileResults(profile);
+      // Clear the current html
+      ThemePreviewPanel.currentPanel._panel.webview.html = '';
+      ThemePreviewPanel.currentPanel._panel.webview.html = await ThemePreviewPanel.currentPanel._getInitialHtml(profile);
       return;
     }
 
     const panel = window.createWebviewPanel(
       'themePreview',
-      'Theme Preview',
+      'Liquid Profile',
       column,
       {
-        enableScripts: true
+        enableScripts: true,
+        // Allow files in the user's workspace (.tmp directory) to be used as local resources
+        localResourceRoots: [
+          ...(workspace.workspaceFolders ? workspace.workspaceFolders.map(folder => folder.uri) : []),
+          Uri.file(context.asAbsolutePath(path.join('resources', 'speedscope')))
+        ]
       }
     );
 
     ThemePreviewPanel.currentPanel = new ThemePreviewPanel(panel, context);
+    ThemePreviewPanel.currentPanel._panel.webview.html = await ThemePreviewPanel.currentPanel._getInitialHtml(profile);
+    ThemePreviewPanel.currentPanel.processProfileResults(profile);
   }
   
   public get panel() {
     return this._panel;
   }
 
-  private _getInitialHtml() {
-    return `
-      <!DOCTYPE html>
-      <html>
-        <body>
-          <div style="padding: 20px;">
-            <input type="text" id="urlInput" placeholder="Enter preview URL in format: https://example.myshopify.com" style="width: 80%; padding: 5px;">
-            <button id="loadButton">Load Preview</button>
-          </div>
-          <div id="previewContainer"></div>
-          <script>
-            const vscode = acquireVsCodeApi();
-            document.getElementById('loadButton').addEventListener('click', () => {
-              const url = document.getElementById('urlInput').value;
-              vscode.postMessage({ command: 'loadUrl', url });
-            });
-          </script>
-        </body>
-      </html>
-    `;
-  }
+  private async _getInitialHtml(profileContents: string) {
+    const indexHtmlPath = Uri.file(this._context.asAbsolutePath(path.join('resources', 'speedscope', 'index.html')));
+    const indexHtml = await workspace.fs.readFile(indexHtmlPath);
+    let htmlContent = Buffer.from(indexHtml).toString('utf8');
 
-  private _getWebviewContent(url: string) {
-    return `
-      <!DOCTYPE html>
-      <html>
-        <p>Displaying preview for ${url}</p>
-        <body style="margin: 0; padding: 0; height: 100vh;">
-          <iframe src="${url}" style="width: 100%; height: 100%; border: none;"></iframe>
-        </body>
-      </html>
-    `;
+    // Convert local resource paths to vscode-resource URIs
+    const cssUri = this._panel.webview.asWebviewUri(Uri.file(this._context.asAbsolutePath(path.join('resources', 'speedscope', 'source-code-pro.52b1676f.css'))));
+    const resetCssUri = this._panel.webview.asWebviewUri(Uri.file(this._context.asAbsolutePath(path.join('resources', 'speedscope', 'reset.8c46b7a1.css'))));
+    const jsUri = this._panel.webview.asWebviewUri(Uri.file(this._context.asAbsolutePath(path.join('resources', 'speedscope', 'speedscope.6f107512.js'))));
+    //const scopeUri = this._panel.webview.asWebviewUri(Uri.file(this._context.asAbsolutePath(path.join('resources', 'speedscope', 'mcliquid-profile.json'))));
+
+    // Replace paths in HTML content
+    htmlContent = htmlContent.replace('source-code-pro.52b1676f.css', cssUri.toString());
+    htmlContent = htmlContent.replace('reset.8c46b7a1.css', resetCssUri.toString());
+    htmlContent = htmlContent.replace('speedscope.6f107512.js', jsUri.toString());
+
+    const tmpDir = workspace.workspaceFolders?.[0].uri.fsPath;
+    const tmpFile = path.join(tmpDir!, '.tmp', 'profile.json');
+    await workspace.fs.writeFile(Uri.file(tmpFile), Buffer.from(profileContents));
+    const tmpUri = this._panel.webview.asWebviewUri(Uri.file(tmpFile));
+    htmlContent = htmlContent.replace('__PROFILE_URL__', encodeURIComponent(tmpUri.toString()));
+
+    // // Insert the CSP into the HTML content
+    // const modifiedHtmlContent = htmlContent.replace('<head>', `<head>${csp}`);
+
+    // console.log('[Theme Preview] Index HTML with CSP:', modifiedHtmlContent);
+    // also return pageContents
+    return htmlContent;
   }
 
   public dispose() {
@@ -142,18 +121,16 @@ class ThemePreviewPanel {
     }
   }
 
-  private async processProfileResults() {
+  public async processProfileResults(profileData: string) {
     console.log('[Theme Preview] Processing profile results for decorations');
     try {
       // Clear existing decorations
       ThemePreviewPanel.decorations.clear();
-      const activeEditor = window.activeTextEditor;
-      if (activeEditor) {
-        activeEditor.setDecorations(decorationType, []);
+      const visibleEditorsToClear = window.visibleTextEditors;
+      for (const editor of visibleEditorsToClear) {
+        editor.setDecorations(fileDecorationType, []);
+        editor.setDecorations(lineDecorationType, []);
       }
-
-      const profilePath = Uri.file(this._context.asAbsolutePath(`resources/mcliquid-profile.json`));
-      const profileData = await workspace.fs.readFile(profilePath);
       
       // Parse using speedscope's file format parser
       const parsedProfile = JSON.parse(profileData.toString());
@@ -164,12 +141,13 @@ class ThemePreviewPanel {
       
       // Map to store file paths and their execution times
       const fileExecutionTimes = new Map<string, number>();
+      const lineExecutionTimes = new Map<string, number>();
       const openEvents = new Map<number, number>(); // frameId -> startTime
 
       // Process events to calculate execution times
       profile.events.forEach(event => {
-        const frameId = event.frame; // index of the frame
-        const frame = frames[frameId];
+        const frameId = event.frame; // index of the frame eg 24
+        const frame = frames[frameId]; // shared frame 
         
         if (event.type === 'O') { // Open event
           openEvents.set(frameId, event.at);
@@ -178,10 +156,13 @@ class ThemePreviewPanel {
           if (startTime !== undefined) {
             const duration = event.at - startTime; // in nanoseconds
             
-            // Only process liquid files
+            // sum up the durations on the frameId
             if (frame.file && (frame.file.startsWith('sections/') || frame.file.startsWith('snippets/'))) {
+              let current = lineExecutionTimes.get(frameId) || 0;
+              lineExecutionTimes.set(frameId, current + duration); 
+                          
               const liquidFile = `${frame.file}.liquid`;
-              const current = fileExecutionTimes.get(liquidFile) || 0;
+              current = fileExecutionTimes.get(liquidFile) || 0;
               fileExecutionTimes.set(liquidFile, current + duration);
             }
             
@@ -190,9 +171,15 @@ class ThemePreviewPanel {
         }
       });
 
-      console.log('[Theme Preview] Calculated execution times:', 
+      console.log('[Theme Preview] Calculated file execution times:', 
         Object.fromEntries([...fileExecutionTimes.entries()].map(
           ([file, time]) => [file, `${(time / 1000000).toFixed(2)}ms`]
+        ))
+      );
+
+      console.log('[Theme Preview] Calculated line execution times:', 
+        Object.fromEntries([...lineExecutionTimes.entries()].map(
+          ([frameId, time]) => [frameId, `${(time / 1000000).toFixed(2)}ms`]
         ))
       );
 
@@ -217,7 +204,7 @@ class ThemePreviewPanel {
             range: firstLine.range,
             renderOptions: {
               after: {
-                contentText: `⏱️ ${(duration / 1000000).toFixed(2)}ms`,
+                contentText: ` (File) ⏱️ ${(duration / 1000000).toFixed(2)}ms`,
                 color: this.getColorForDuration(duration),
               }
             }
@@ -226,27 +213,85 @@ class ThemePreviewPanel {
           // Store decoration for this file
           ThemePreviewPanel.decorations.set(uri.fsPath, [decoration]);
           
-          // Apply decoration if this is the active editor
-          const editor = window.activeTextEditor;
-          if (editor && editor.document.uri.fsPath === uri.fsPath) {
-            editor.setDecorations(decorationType, [decoration]);
+          const visibleEditors = window.visibleTextEditors;
+          // store the paths it's been applied to in a set
+          const appliedPaths = new Set<string>();
+          for (const editor of visibleEditors) {
+            if (editor.document.uri.fsPath === uri.fsPath && !appliedPaths.has(editor.document.uri.fsPath)) {
+              console.log(`[Theme Preview] Applying file decoration for ${liquidFile} (${(duration / 1000000).toFixed(2)}ms)`);
+              editor.setDecorations(fileDecorationType, [decoration]);
+              appliedPaths.add(editor.document.uri.fsPath);
+            }
           }
 
-          console.log(`[Theme Preview] Created decoration for ${liquidFile} (${(duration / 1000000).toFixed(2)}ms)`);
+          console.log(`[Theme Preview] Created file decoration for ${liquidFile} (${(duration / 1000000).toFixed(2)}ms)`);
         } catch (err) {
-          console.error(`[Theme Preview] Error creating decoration for ${fullPath}:`, err);
+          console.error(`[Theme Preview] Error creating file decoration for ${fullPath}:`, err);
         }
       }
 
-      // Add listener for active editor changes
+      // Decorations for lines
+      for (const [frameId, duration] of lineExecutionTimes) {
+        try {
+          const frame = frames[frameId];
+          const uri = Uri.file(path.join(rootPath, `${frame.file}.liquid`));
+          const document = await workspace.openTextDocument(uri);
+          // If frame.name starts with 'variable:', then scan the line for the variable name after "variable:" and find the range immediately after the variable name to apply the decoration to
+          let range: Range | undefined;
+          if (frame.name.startsWith('variable:') || frame.name.startsWith('tag:')) {
+            const variableName = frame.name.split('variable:')[1] || frame.name.split('tag:')[1]; 
+            const line = document.lineAt(frame.line - 1);
+            const variableRange = line.text.indexOf(variableName);// 7
+            
+            if (variableRange !== -1) {
+              // Create range that covers the variable name itself using explicit positions
+              range = new Range(
+                new Position(line.lineNumber, variableRange),
+                new Position(line.lineNumber, variableRange + variableName.length)
+              );
+            } else {
+              // Fallback to full line if variable name not found
+              range = line.range;
+            }
+            console.log(`[Theme Preview] Variable Range: ${range} Frame: ${frame}`);
+          } else {
+            const line = document.lineAt(frame.line - 1);
+            console.log(`[Theme Preview] Line: ${line.range} Frame: ${frame}`);
+            range = line.range;
+          }
+          const decoration: DecorationOptions = {
+            range: range!,
+            renderOptions: { after: { contentText: ` ⏱️ ${(duration / 1000000).toFixed(2)}ms` } }
+          };
+
+          // Store the decoration in a map where the key is the file path and the value is an array of decorations
+          const fileDecorations = ThemePreviewPanel.decorations.get(uri.fsPath) || [];
+          fileDecorations.push(decoration);
+          ThemePreviewPanel.decorations.set(uri.fsPath, fileDecorations);
+
+        } catch (err) {
+          console.error(`[Theme Preview] Error creating line decoration for ${frameId}:`, err);
+        }
+      }
+
+      // Apply the decoration in the editor
+      const visibleEditors = window.visibleTextEditors;
+      for (const editor of visibleEditors) {
+        // Get stored decorations for this file
+        const lineDecorations = ThemePreviewPanel.decorations.get(editor.document.uri.fsPath) || [];
+        editor.setDecorations(lineDecorationType, lineDecorations);
+      }
+
+      //Add listener for active editor changes
       this._context.subscriptions.push(
         window.onDidChangeActiveTextEditor(editor => {
           if (editor) {
             const decorations = ThemePreviewPanel.decorations.get(editor.document.uri.fsPath);
             if (decorations) {
-              editor.setDecorations(decorationType, decorations);
+              editor.setDecorations(lineDecorationType, decorations);
             } else {
-              editor.setDecorations(decorationType, []);
+              editor.setDecorations(lineDecorationType, []);
+              editor.setDecorations(fileDecorationType, []);
             }
           }
         })
@@ -263,6 +308,30 @@ class ThemePreviewPanel {
     if (ms < 10) return '#4caf50';      // Fast: Green
     if (ms < 50) return '#ffc107';      // Medium: Yellow
     return '#f44336';                    // Slow: Red
+  }
+}
+
+function getProfileContents(url: string) {
+  try {
+    console.log('[Theme Preview] Attempting to load preview for URL:', url);
+    const result = execSync(`shopify theme profile --url=${url}`, { stdio: 'pipe' });
+    // remove all characters leading up to the first {
+    const content = result.toString().replace(/^[^{]+/, '');
+    console.log(`[Theme Preview] Successfully retrieved preview content ${content}`);
+    return content;
+  } catch (error) {
+    console.error('[Theme Preview] Error loading preview:', error);
+    if (error instanceof Error) {
+      // If there's stderr output, it will be in error.stderr
+      const errorMessage = (error as any).stderr?.toString() || error.message;
+      console.error('[Theme Preview] Error details:', errorMessage);
+      return `<div style="color: red; padding: 20px;">
+        <h3>Error loading preview:</h3>
+        <pre>${errorMessage}</pre>
+      </div>`;
+    }
+    console.error('[Theme Preview] Unexpected error type:', typeof error);
+    return '<div style="color: red; padding: 20px;">An unexpected error occurred</div>';
   }
 }
 
@@ -284,8 +353,15 @@ export async function activate(context: ExtensionContext) {
     ),
   );
   context.subscriptions.push(
-    commands.registerCommand('shopifyLiquid.openPreview', () => {
-      ThemePreviewPanel.createOrShow(context);
+    commands.registerCommand('shopifyLiquid.openPreview', async () => {
+      const url = await window.showInputBox({
+        prompt: 'Enter the URL to profile:',
+        placeHolder: 'https://mystore.myshopify.com',
+      });
+
+      if (url) {
+        await ThemePreviewPanel.createOrShow(context, url);
+      }
     })
   );
 

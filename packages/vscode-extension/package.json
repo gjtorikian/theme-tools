@@ -102,7 +102,7 @@
       },
       {
         "command": "shopifyLiquid.openPreview",
-        "title": "Shopify: Open Theme Preview"
+        "title": "Shopify: Liquid Profile for URL..."
       }
     ],
     "configuration": {
