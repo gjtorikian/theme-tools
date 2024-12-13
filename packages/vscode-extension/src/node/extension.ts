@@ -152,7 +152,7 @@ class ThemePreviewPanel {
         activeEditor.setDecorations(decorationType, []);
       }
 
-      const profilePath = Uri.file(this._context.asAbsolutePath(`resources/test-profile.json`));
+      const profilePath = Uri.file(this._context.asAbsolutePath(`resources/mcliquid-profile.json`));
       const profileData = await workspace.fs.readFile(profilePath);
       
       // Parse using speedscope's file format parser
@@ -168,7 +168,7 @@ class ThemePreviewPanel {
 
       // Process events to calculate execution times
       profile.events.forEach(event => {
-        const frameId = event.frame;
+        const frameId = event.frame; // index of the frame
         const frame = frames[frameId];
         
         if (event.type === 'O') { // Open event
@@ -176,10 +176,10 @@ class ThemePreviewPanel {
         } else if (event.type === 'C') { // Close event
           const startTime = openEvents.get(frameId);
           if (startTime !== undefined) {
-            const duration = event.at - startTime;
+            const duration = event.at - startTime; // in nanoseconds
             
             // Only process liquid files
-            if (frame.file.startsWith('sections/') || frame.file.startsWith('snippets/')) {
+            if (frame.file && (frame.file.startsWith('sections/') || frame.file.startsWith('snippets/'))) {
               const liquidFile = `${frame.file}.liquid`;
               const current = fileExecutionTimes.get(liquidFile) || 0;
               fileExecutionTimes.set(liquidFile, current + duration);
