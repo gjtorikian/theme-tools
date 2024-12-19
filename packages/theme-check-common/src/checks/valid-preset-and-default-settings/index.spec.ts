@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ValidPresetSettings } from '.';
 import { check } from '../../test/test-helper';
 import { MockTheme } from '../../test/MockTheme';
+import { ValidPresetAndDefaultSettings } from '.';
 
-describe('ValidPresetSettings', () => {
-  it('should report invalid keys in a blocks preset setting', async () => {
+describe('ValidPresetAndDefaultSettings', () => {
+  it('should report invalid keys in a blocks preset settings', async () => {
     const theme: MockTheme = {
       'blocks/price.liquid': `
         {% schema %}
@@ -36,26 +36,67 @@ describe('ValidPresetSettings', () => {
       `,
     };
 
-    const offenses = await check(theme, [ValidPresetSettings]);
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
     expect(offenses).to.have.length(1);
     expect(offenses[0].message).to.include(
       'Preset setting "undefined_setting" does not exist in settings',
     );
   });
 
-  it('should report invalid keys in a blocks nested block preset setting', async () => {
+  it('should report invalid keys in a blocks default settings', async () => {
+    const theme: MockTheme = {
+      'blocks/price.liquid': `
+        {% schema %}
+        {
+          "name": "t:names.product_price",
+          "settings": [
+            {
+              "type": "product",
+              "id": "product",
+              "label": "t:settings.product"
+            },
+            {
+              "type": "collection",
+              "id": "collection",
+              "label": "t:settings.collection"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "block_1",
+              "name": "t:names.block_1"
+            }
+          ],
+          "default": {
+            "settings": {
+              "undefined_setting": "incorrect setting key"
+            }
+          }
+        }
+        {% endschema %}
+      `,
+    };
+
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
+    expect(offenses).to.have.length(1);
+    expect(offenses[0].message).to.include(
+      'Default setting "undefined_setting" does not exist in settings',
+    );
+  });
+
+  it('should report invalid keys in a blocks nested block preset settings', async () => {
     const theme: MockTheme = {
       'blocks/block_1.liquid': `
         {% schema %}
         {
           "name": "t:names.block_1",
-        "settings": [
-          {
-            "type": "text",
-            "id": "block_1_setting_key",
-            "label": "t:settings.block_1"
-          }
-        ]
+          "settings": [
+            {
+              "type": "text",
+              "id": "block_1_setting_key",
+              "label": "t:settings.block_1"
+            }
+          ]
       }
       {% endschema %}
     `,
@@ -82,12 +123,12 @@ describe('ValidPresetSettings', () => {
             }
           ],
           "presets": [
-            {
+            { 
               "name": "t:names.product_price",
               "settings": {
                 "product": "{{ context.product }}",
                 "collection": "{{ context.collection }}"
-              },
+            },
               "blocks": [
                 {
                   "block_1": {
@@ -99,13 +140,6 @@ describe('ValidPresetSettings', () => {
                   }
                 }
               ]
-            },
-            {
-              "name": "t:names.product_price_2",
-              "settings": {
-                "product": "{{ context.product }}",
-                "collection": "{{ context.collection }}"
-              }
             }
           ]
         }
@@ -113,14 +147,81 @@ describe('ValidPresetSettings', () => {
       `,
     };
 
-    const offenses = await check(theme, [ValidPresetSettings]);
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
     expect(offenses).to.have.length(1);
     expect(offenses[0].message).to.include(
       `Preset block setting "undefined_setting" does not exist in settings`,
     );
   });
 
-  it('should not report when all preset settings in the block are valid', async () => {
+  it('should report invalid keys in a blocks nested block default setting', async () => {
+    const theme: MockTheme = {
+      'blocks/block_1.liquid': `
+        {% schema %}
+        {
+          "name": "t:names.block_1",
+          "settings": [
+            {
+              "type": "text",
+              "id": "block_1_setting_key",
+              "label": "t:settings.block_1"
+            }
+          ]
+      }
+      {% endschema %}
+    `,
+      'blocks/price.liquid': `
+        {% schema %}
+        {
+          "name": "t:names.product_price",
+          "settings": [
+            {
+              "type": "product",
+              "id": "product",
+              "label": "t:settings.product"
+            },
+            {
+              "type": "collection",
+              "id": "collection",
+              "label": "t:settings.collection"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "block_1",
+              "name": "t:names.block_1"
+            }
+          ],
+          "default": {
+            "settings": {
+              "product": "{{ context.product }}",
+              "collection": "{{ context.collection }}"
+            },
+            "blocks": [
+              {
+                "block_1": {
+                  "type": "block_1",
+                  "settings": {
+                    "block_1_setting_key": "correct setting key",
+                    "undefined_setting": "incorrect setting key"
+                  }
+                }
+              }
+            ]
+          }
+        }
+        {% endschema %}
+      `,
+    };
+
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
+    expect(offenses).to.have.length(1);
+    expect(offenses[0].message).to.include(
+      `Default block setting "undefined_setting" does not exist in settings`,
+    );
+  });
+
+  it('should not report when all preset and default settings in the block are valid', async () => {
     const theme: MockTheme = {
       'blocks/block_1.liquid': `
         {% schema %}
@@ -176,13 +277,29 @@ describe('ValidPresetSettings', () => {
                 }
               ]
             }
-          ]
+          ],
+          "default": {
+            "settings": {
+              "product": "{{ context.product }}",
+              "section_setting": "some value"
+            },
+            "blocks": [
+              {
+                "block_1": {
+                  "type": "block_1",
+                  "settings": {
+                    "block_1_setting_key": "correct setting key"
+                  }
+                }
+              ]
+            }
+          }
         }
         {% endschema %}
       `,
     };
 
-    const offenses = await check(theme, [ValidPresetSettings]);
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
     expect(offenses).to.have.length(0);
   });
 
@@ -379,10 +496,207 @@ describe('ValidPresetSettings', () => {
       `,
     };
 
-    const offenses = await check(theme, [ValidPresetSettings]);
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
     expect(offenses).to.have.length(1);
     expect(offenses[0].message).to.include(
       `Preset setting "undefined_setting" does not exist in settings`,
+    );
+  });
+
+  it('should report invalid keys in a sections default setting', async () => {
+    const theme: MockTheme = {
+      'sections/header-announcements.liquid': `
+        {% schema %}
+        {
+          "name": "Announcement bar",
+          "tag": "aside",
+          "blocks": [
+            {
+              "type": "announcement"
+            }
+          ],
+          "enabled_on": {
+            "groups": [
+              "header"
+            ]
+          },
+          "settings": [
+            {
+              "type": "select",
+              "id": "show_as",
+              "label": "Type",
+              "options": [
+                {
+                  "value": "carousel",
+                  "label": "Carousel"
+                },
+                {
+                  "value": "list",
+                  "label": "List"
+                },
+                {
+                  "value": "scroll",
+                  "label": "Scroll"
+                }
+              ]
+            },
+            {
+              "type": "checkbox",
+              "id": "auto_rotate",
+              "label": "Auto rotate",
+              "default": true,
+              "available_if": "{{ section.settings.show_as == 'carousel' }}"
+            },
+            {
+              "type": "select",
+              "id": "align_items",
+              "label": "Alignment",
+              "options": [
+                {
+                  "value": "start",
+                  "label": "Start"
+                },
+                {
+                  "value": "center",
+                  "label": "Center"
+                },
+                {
+                  "value": "end",
+                  "label": "End"
+                }
+              ],
+              "default": "center",
+              "available_if": "{{ section.settings.show_as == 'list' }}"
+            },
+            {
+              "type": "range",
+              "id": "gap",
+              "label": "Gap",
+              "min": 0,
+              "max": 100,
+              "unit": "px",
+              "default": 16,
+              "available_if": "{{ section.settings.show_as == 'list' }}"
+            },
+            {
+              "type": "range",
+              "id": "speed",
+              "label": "Speed",
+              "min": 0,
+              "max": 5,
+              "default": 5,
+              "unit": "sec",
+              "available_if": "{{ section.settings.show_as == 'scroll' }}"
+            },
+            {
+              "type": "color_scheme",
+              "id": "color_scheme",
+              "default": "scheme-4",
+              "label": "Color Scheme"
+            },
+            {
+              "type": "header",
+              "content": "Padding"
+            },
+            {
+              "type": "range",
+              "id": "padding-block-start",
+              "label": "Top",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 16
+            },
+            {
+              "type": "range",
+              "id": "padding-block-end",
+              "label": "Bottom",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 16
+            },
+            {
+              "type": "range",
+              "id": "padding-inline-start",
+              "label": "Left",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 2
+            },
+            {
+              "type": "range",
+              "id": "padding-inline-end",
+              "label": "Right",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 2
+            },
+            {
+              "type": "header",
+              "content": "Margin"
+            },
+            {
+              "type": "range",
+              "id": "margin-block-start",
+              "label": "Top",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            },
+            {
+              "type": "range",
+              "id": "margin-block-end",
+              "label": "Bottom",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            },
+            {
+              "type": "range",
+              "id": "margin-inline-start",
+              "label": "Left",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            },
+            {
+              "type": "range",
+              "id": "margin-inline-end",
+              "label": "Right",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            }
+          ],
+          "default": {
+            "settings": {
+              "undefined_setting": "list"
+            }
+          }
+        }
+        {% endschema %}
+      `,
+    };
+
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
+    expect(offenses).to.have.length(1);
+    expect(offenses[0].message).to.include(
+      `Default setting "undefined_setting" does not exist in settings`,
     );
   });
 
@@ -600,10 +914,229 @@ describe('ValidPresetSettings', () => {
       `,
     };
 
-    const offenses = await check(theme, [ValidPresetSettings]);
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
     expect(offenses).to.have.length(1);
     expect(offenses[0].message).to.include(
       `Preset block setting "undefined_setting" does not exist in settings`,
+    );
+  });
+
+  it('should report invalid keys in a sections nested block preset setting', async () => {
+    const theme: MockTheme = {
+      'blocks/announcement.liquid': `
+        {% schema %}
+        {
+          "name": "Announcement",
+          "settings": [
+            {
+              "type": "text",
+              "id": "text",
+              "label": "Text"
+            }
+          ]
+        }
+        {% endschema %}
+      `,
+      'sections/header-announcements.liquid': `
+        {% schema %}
+        {
+          "name": "Announcement bar",
+          "tag": "aside",
+          "blocks": [
+            {
+              "type": "announcement"
+            }
+          ],
+          "enabled_on": {
+            "groups": [
+              "header"
+            ]
+          },
+          "settings": [
+            {
+              "type": "select",
+              "id": "show_as",
+              "label": "Type",
+              "options": [
+                {
+                  "value": "carousel",
+                  "label": "Carousel"
+                },
+                {
+                  "value": "list",
+                  "label": "List"
+                },
+                {
+                  "value": "scroll",
+                  "label": "Scroll"
+                }
+              ]
+            },
+            {
+              "type": "checkbox",
+              "id": "auto_rotate",
+              "label": "Auto rotate",
+              "default": true,
+              "available_if": "{{ section.settings.show_as == 'carousel' }}"
+            },
+            {
+              "type": "select",
+              "id": "align_items",
+              "label": "Alignment",
+              "options": [
+                {
+                  "value": "start",
+                  "label": "Start"
+                },
+                {
+                  "value": "center",
+                  "label": "Center"
+                },
+                {
+                  "value": "end",
+                  "label": "End"
+                }
+              ],
+              "default": "center",
+              "available_if": "{{ section.settings.show_as == 'list' }}"
+            },
+            {
+              "type": "range",
+              "id": "gap",
+              "label": "Gap",
+              "min": 0,
+              "max": 100,
+              "unit": "px",
+              "default": 16,
+              "available_if": "{{ section.settings.show_as == 'list' }}"
+            },
+            {
+              "type": "range",
+              "id": "speed",
+              "label": "Speed",
+              "min": 0,
+              "max": 5,
+              "default": 5,
+              "unit": "sec",
+              "available_if": "{{ section.settings.show_as == 'scroll' }}"
+            },
+            {
+              "type": "color_scheme",
+              "id": "color_scheme",
+              "default": "scheme-4",
+              "label": "Color Scheme"
+            },
+            {
+              "type": "header",
+              "content": "Padding"
+            },
+            {
+              "type": "range",
+              "id": "padding-block-start",
+              "label": "Top",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 16
+            },
+            {
+              "type": "range",
+              "id": "padding-block-end",
+              "label": "Bottom",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 16
+            },
+            {
+              "type": "range",
+              "id": "padding-inline-start",
+              "label": "Left",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 2
+            },
+            {
+              "type": "range",
+              "id": "padding-inline-end",
+              "label": "Right",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 2
+            },
+            {
+              "type": "header",
+              "content": "Margin"
+            },
+            {
+              "type": "range",
+              "id": "margin-block-start",
+              "label": "Top",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            },
+            {
+              "type": "range",
+              "id": "margin-block-end",
+              "label": "Bottom",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            },
+            {
+              "type": "range",
+              "id": "margin-inline-start",
+              "label": "Left",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            },
+            {
+              "type": "range",
+              "id": "margin-inline-end",
+              "label": "Right",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "unit": "px",
+              "default": 0
+            }
+          ],
+          "default": {
+            "settings": {
+              "show_as": "list"
+            },
+            "blocks": [
+              {
+                "type": "announcement",
+                "settings": {
+                  "undefined_setting": "list"
+                }
+              }
+            ]
+          }
+        }
+        {% endschema %}
+      `,
+    };
+
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
+    expect(offenses).to.have.length(1);
+    expect(offenses[0].message).to.include(
+      `Default block setting "undefined_setting" does not exist in settings`,
     );
   });
 
@@ -1090,7 +1623,7 @@ describe('ValidPresetSettings', () => {
         {% endschema %}
       `,
     };
-    const offenses = await check(theme, [ValidPresetSettings]);
+    const offenses = await check(theme, [ValidPresetAndDefaultSettings]);
     expect(offenses).to.have.length(0);
   });
 });

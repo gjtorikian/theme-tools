@@ -27,6 +27,7 @@ export interface PropertyNode extends ASTNode {
   type: 'Property';
   key: IdentifierNode;
   value: ValueNode;
+  children: any[];
 }
 
 export interface IdentifierNode extends ASTNode {
